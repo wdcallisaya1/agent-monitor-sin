@@ -1,1 +1,18 @@
-{}
+{
+  "_fallos": {},
+  "https://siatanexo.impuestos.gob.bo/index.php/documentos-fiscales-digitales/archivos-xml-xsd-de-facturas-electronicas/factura-de-compra-y-venta": {
+    "page_text_hash": "bd5646f073d826e7f8dbb260c60febfe65dbd0b1bdc7ae7fad5c25adbd24d9e8",
+    "files": {
+      "https://siatanexo.impuestos.gob.bo/images/archivos_tecnicos/archivos_apoyo/CompraVentaXML.zip": {
+        "text": "Descarga XML/XSD",
+        "sha256": "e57cd61a27771013daf52412a27758573b60692f697d1ca6208ad305cc4ad3ef",
+        "size": 6414
+      },
+      "https://siatanexo.impuestos.gob.bo/images/archivos_tecnicos/archivos_apoyo/factura COMPRA VENTA.pdf": {
+        "text": "Formato Gráfico",
+        "sha256": "327de8654a36dda62c5a40c3353900ba0d4e5be859c68ae178947cca70188578",
+        "size": 114065
+      }
+    }
+  }
+}
