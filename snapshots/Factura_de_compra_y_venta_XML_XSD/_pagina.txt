@@ -1,0 +1,391 @@
+Sidebar
+×
+Siat
+Buscar...
+Regresar
+Detalles
+Visto: 2309
+XML y XSD - Factura de Compra y Venta
+Habilitada para transacciones por bienes o servicios en general, incluyen línea blanca, negra y cualquier actividad que involucre un intercambio de estos.
+Descarga XML/XSD
+Formato Gráfico
+Nombre Campo
+Tipo Dato
+Obligatorio
+Descripción
+CABECERA
+nitEmisor
+Numérico
+Si
+Número de Identificación Tributaria que corresponde a la persona o empresa que emite la factura.
+razonSocialEmisor
+Alfanumérico
+Si
+Nombre completo en el caso de personas naturales y Razón Social en el caso de Personas Jurídicas.
+municipio
+Alfanumérico
+Si
+Nombre del departamento o municipio que se refleja en la Factura.
+telefono
+Alfanumérico
+No
+Número de teléfono consignado en el Registro Nacional de Contribuyentes.
+numeroFactura
+Numérico
+Si
+Numeración propia que se le asigna a la Factura.
+cuf
+Alfanumérico
+Si
+Código único de facturación (CUF), debe ser generado por el emisor siguiendo el algoritmo indicado.
+cufd
+Alfanumérico
+Si
+Código único de facturación diario (CUFD), valor único que se obtiene al consumir el servicio web correspondiente.
+codigoSucursal
+Numérico
+Si
+Código del Domicilio Comercial en la cual se está emitiendo la factura.
+direccion
+Alfanumérico
+Si
+Dirección del Domicilio Comercial en la cual se está emitiendo la factura.
+codigoPuntoVenta
+Numérico
+No
+Código del punto de Venta creado mediante un servicio web y en el cual se emite la factura.
+fechaEmision
+Fecha
+Si
+Fecha y hora en la cual se emite la factura. Expresada en formato UTC Extendido, por ejemplo: “2020-02-15T08:40:12.215”.
+nombreRazonSocial
+Alfanumérico
+No
+Razón Social o nombre de la persona u empresa a la cual se emite la factura.
+codigoTipoDocumentoIdentidad
+Numérico
+Si
+Valor de la paramétrica que identifica el Tipo de Documento utilizado para la emisión de la factura. Puede contener valores del 1 al 5.
+numeroDocumento
+Alfanumérico
+Si
+Número que corresponde al Tipo de Documento utilizado y al cual se realizará la facturación.
+complemento
+Alfanumérico
+Si
+Valor que otorga el SEGIP en casos de cédulas de identidad con número duplicado, En otro caso enviar cero (0).
+codigoCliente
+Alfanumérico
+Si
+Código de identificación único del cliente, deberá ser asignado por el sistema de facturación del contribuyente.
+codigoMetodoPago
+Numérico
+Si
+Valor de la paramétrica que identifica el método de pago utilizado para realizar la compra. Por ejemplo: 1 que representa a un pago en efectivo. (Utilizar el tipo de pago Otros  (5) solo si el método utilizado no esta disponible).
+numeroTarjeta
+Numérico
+No
+Cuando el método de pago es 2 (Tarjeta), debe enviarse este valor pero ofuscado con los primeros y últimos 4 dígitos en claro y ceros al medio. Ej: 4797000000007896, en otro caso, debe enviarse un valor nulo.
+subtotalNeto
+Numérico
+Si
+Suma de los subtotales de todos los ítems incluidos en la factura, antes de la aplicación de impuestos, descuentos globales o cargos adicionales.
+totalPrecioNeto
+Numérico
+Si
+Monto obtenido al deducir los descuentos globales y otros cargos del Subtotal Neto.
+iva
+Numérico
+Si
+Monto que se obtiene de aplicar el 13% al Total Precio Neto.
+montoaPagar
+Numérico
+Si
+Monto por el cual se realiza el hecho generador, resultado de sumar el Total Precio Neto y el IVA.
+montoGiftCard
+Numérico
+No
+Monto a ser cancelado con una Gift Card.
+descuentoAdicional
+Numérico
+No
+Monto Adicional al descuento por item.
+codigoExcepcion
+Numérico
+No
+Por defecto, enviar este campo con un valor de cero (0) o nulo. Solo cuando se desee autorizar al SIN el registro de una factura emitida a un NIT inválido se debe enviar el valor de uno (1) en el mismo.
+codigoMoneda
+Numérico
+Si
+Valor de la paramétrica que identifica la moneda en la cual se realiza la transacción.
+tipoCambio
+Numérico
+Si
+Tipo de cambio de acuerdo a la moneda en la que se realiza el hecho generador, si el código de moneda es boliviano deberá ser igual a 1.
+montoTotalMoneda
+Numérico
+Si
+Es el Monto a Pagar expresado en el tipo de moneda. Si el código de moneda es boliviano deberá ser igual al Monto a Pagar.
+leyenda
+Alfanumérico
+Si
+Leyenda asociada a la actividad económica.
+usuario
+Alfanumérico
+Si
+Identifica al usuario que emite la factura, deberá ser descriptivo. Por ejemplo: JPEREZ.
+codigoInterno
+Alfanumérico
+Si
+Codigo Interno SIN
+codigoDocumentoSector
+Numérico
+Si
+Valor de la paramétrica que identifica el tipo de factura que se está emitiendo. Para este tipo de factura este valor es 1.
+DETALLE
+actividadEconomica
+Alfanumérico
+Si
+Actividad económica consignada en el Registro Nacional de Contribuyentes relacionada al NIT.
+codigoProductoSin
+Numérico
+Si
+Homologado a los códigos de productos genéricos enviados por el SIN a través del servicio de sincronización.
+codigoProducto
+Alfanumérico
+Si
+Código que otorga el contribuyente a su servicio o producto.
+descripcion
+Alfanumérico
+Si
+Descripción que otorga el contribuyente a su servicio o producto.
+cantidad
+Numérico
+Si
+Cantidad del producto o servicio otorgado. En caso de servicio este valor debe ser 1.
+unidadMedida
+Numérico
+Si
+Valor de la paramétrica que identifica la unidad de medida.
+precioNetoUnitario
+Numérico
+Si
+Precio del producto o servicio sin incluir impuestos.
+montoDescuento
+Numérico
+No
+Monto de descuento sobre el producto o servicio específico,  Si no aplica deberá ser nulo.
+subTotal
+Numérico
+Si
+El subtotal es igual a la (cantidad * precio neto unitario) – descuento.
+numeroSerie
+Alfanumérico
+No
+Número de serie correspondiente al producto vendido de línea blanca o negra. Nulo en otro caso.
+numeroImei
+Alfanumérico
+No
+Número de IMEI del celular vendido. Nulo en otro caso.
+Nota.
+- En el caso de venta de servicios, se debe considerar en cantidad consignar 1, en unidad de medida consignar 58 (unidad servicio), el precio del servicio consignarlo en precio unitario para fines de cálculo.
+Si los números de serie o Imei son pocos incluirlos en el detalle de la factura caso contrario enviar los mismos consumiendo el servicio
+Recepción Archivos Anexos
+correspondiente, el cual permite el registro simultaneo de varios números de Serie o Imei.
+Si corresponde, incluir en el campo Descripción de la factura el número de la Guía de Tránsito utilizada para el transporte de los productos.
+En caso de utilizar la modalidad electrónica en linea, no se olvide de incluir en el XSD la dirección donde se encuentra el
+SignatureSchema
+.
+Inicio
+Objeto y Alcance
+Requerimientos y Esquemas de Conexión
+Sistema Informático de Facturación
+Esquemas de Conexión
+Esquemas de Despliegue
+Documentos Fiscales Digitales
+¿Qué es un Documento Fiscal Digital?
+Modalidades de Facturación
+Electrónica
+Computarizada
+Tipos de Documentos Sector
+Descripción Archivos XML / XSD
+Factura de Compra y Venta
+Factura Alquiler
+Factura Comercial Exportación
+Factura Comercial Exportación Libre Consignación
+Factura de Venta en Zona Franca
+Factura de Servicios Turísticos y Hospedaje
+Factura de Seguridad Alimentaria y Abastecimiento
+Factura Tasa Cero
+Factura de Compra Venta Moneda Extranjera
+Factura Dutty Free
+Factura Sector Educativo
+Factura Comercialización de GNV
+Factura Comercialización de GN y GLP
+Factura Servicios Básicos
+Factura Alcanzada por ICE
+Factura Entidades Financieras
+Factura Hoteles
+Factura Hospitales Clínicas
+Factura Juegos de Azar
+Factura de Hidrocarburos Alcanzada IEHD
+Factura de Hidrocarburos No Alcanzada IEHD
+Factura Venta Interna de Minerales
+Factura Comercial de Exportación de Minerales
+Factura Telecomunicaciones
+Factura Prevalorada
+Nota Crédito - Débito
+Factura Comercial de Exportación de Servicios
+Nota Conciliación
+Boleto Aéreo
+Factura de Suministro de Energía
+Factura de Seguros
+Factura Compra Venta Bonificaciones
+Factura Prevalorada Sin Derecho a Crédito Fiscal
+Factura Servicios Básicos Zona Franca
+Factura Vuelos Charter
+Factura Alquiler Zona Franca
+Factura Comercial Exportación Hidrocarburos
+Factura Importación y Comercialización de Lubricantes
+Factura Comercial de Exportación Precio Venta
+Factura Sector Educativo Zona Franca
+Nota Crédito Débito ICE
+Factura Telecomunicaciones Zona Franca
+Factura Hospital Clínica Zona Franca
+Factura Venta Mineral Banco Central
+Factura Importación y Comercialización de Lubricantes IEHD
+Factura Compra-Venta de Insumos para la Producción de Biodiésel y/o Diésel Ecológico
+Factura Comercialización de Combustible
+Validaciones Documentos Sector
+Documentos Sector 1
+Documentos Sector 2
+Descripción de Servicios SOAP
+Códigos
+Notifica Certificado Revocado
+Solicitud CUFD
+Solicitud CUFD Masivo
+Solicitud CUIS
+Solicitud CUIS Masivo
+Verifica NIT
+Operaciones
+Cierre de Operaciones
+Cierre Punto de Venta
+Consulta Evento Significativo
+Consulta Puntos de Venta
+Registro Evento Significativo
+Registro Punto de Venta
+Registro Punto de Venta Comisionista
+Sincronización
+Facturación Electrónica en Línea
+Recepción Factura
+Anulación Factura
+Reversión Anulación Factura
+Recepción Paquete Factura
+Validación Recepción Paquete Factura
+Verifica Comunicación
+Recepción Masiva Factura
+Validación Recepción Masiva Factura
+Verificación Estado Factura
+Recepción Anexo Electrolineras (Elect)
+Facturación Computarizada en Línea
+Recepción Factura
+Anulación Factura
+Reversión Anulación Factura
+Recepción Paquete Factura
+Validación Recepción Paquete Factura
+Verifica Comunicación
+Recepción Masiva Factura
+Validación Recepción Masiva Factura
+Verificación Estado Factura
+Recepción Anexo Electrolineras
+Servicio Factura Compra Venta
+Recepción Factura
+Anulación Factura
+Recepción Paquete Factura
+Validación Recepción Paquete Factura
+Recepción Masiva Factura
+Validación Recepción Masiva Facturas
+Verificación Estado Factura
+Recepción Archivos Anexos
+Reversión Anulación Factura Compra Venta
+Documentos de Ajuste
+Recepción de Documento de Ajuste
+Anulación de Documento de Ajuste
+Verifica Estado de Documento de Ajuste
+Verifica Comunicación
+Reversión Anulación Documento Ajuste
+Recepción Masiva YPFB
+Recepción Masiva Contratos YPFB
+Validación Masiva Contratos YPFB
+Recepción Masiva Boletos Aéreos
+Recepción Masiva Boletos
+Validación Recepción Masiva Boletos
+Anulación Boleto Aéreo
+Reversión Anulación Boleto Aéreo
+Emisión, Envío y Anulación
+Emisión y Envío
+Solicitud Token
+Homologación de Productos/Servicios
+Domicilios Comerciales  y Puntos de Venta
+Anulación de Documentos Fiscales
+Reversión Anulación Documentos Fiscales
+Contingencia
+Contingencia y Eventos Significativos
+Ingreso a Contingencia
+Comprobante de Transacción
+Algoritmos Utilizados
+Algoritmo Módulo 11
+Generación de SHA-256
+Algoritmo Base 16
+Código Respuesta Rápida (QR)
+Comprimir GZIP
+Generación CUF
+Algoritmo de Redondeo
+Firma Digital
+Firma Digital
+Generación CSR
+Introducción
+Generación de CSR para Token
+Generación de CSR para Software
+Generación de CSR para certificados de prueba DEBIAN
+Generación de CSR para certificados de prueba UBUNTU
+Firmado de XML
+Firma Inválida
+SignatureSchema
+Códigos Error SIAT
+Autorización y Renovación de Sistemas Informáticos de Facturación
+Autorización
+Pruebas para la Autorización del Sistema Informático de Facturación
+Fase 1 - Pruebas
+Fase 2 - Inspección
+Fase 3 - Pruebas Piloto
+Prórroga Autorización
+Inhabilitación de Sistemas Autorizados
+Renovación Autorización
+Registro Características
+Adicion IVA Transparente
+Asociación, Confirmación e Inicio de Operaciones
+Asociación de Sistemas
+Inicio Operaciones
+Casos Especiales
+Líneas Aéreas
+Facturación por Terceros
+SAP BusinessOne
+Facturación Comisionistas
+Facturación por Terceros YPFB
+Factura Bienes e Insumos Productivos Ley 1755
+Versionamiento
+Versionamiento_2026
+Está aquí:
+Inicio
+Documentos Fiscales Digitales
+Descripción Archivos XML / XSD
+Copyright © - Servicio de Impuestos Nacionales
+- 2026 -
+Bootstrap
+is a front-end framework of Twitter, Inc. Code licensed under
+MIT License.
+Font Awesome
+font licensed under
+SIL OFL 1.1
+.
