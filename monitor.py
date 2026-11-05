@@ -1,27 +1,24 @@
 #!/usr/bin/env python3
+"""Monitor de cambios en documentación técnica del SIN (Bolivia).
+
+Descarga cada página de urls.json, detecta los archivos enlazados
+(XSD, XML, PDF, ZIP...), calcula su SHA-256 y compara con state.json.
+Si algo cambia, avisa por Telegram (si hay credenciales) y lo imprime en el log.
+
+Manejo de red:
+- Reintentos ante errores temporales.
+- Si el certificado SSL no se puede verificar (el servidor del SIN no envía el
+  certificado intermedio), reintenta sin verificación y lo avisa en el log.
+- El job solo falla si una página falla MAX_FALLOS veces seguidas.
 """
-Monitor de cambios en la documentación técnica de Impuestos Nacionales (Bolivia).
-
-Detecta:
-  - Cambios en el texto de la página.
-  - Enlaces nuevos o eliminados a archivos (XSD, XML, ZIP, PDF, etc.).
-  - Cambios en el contenido de los archivos enlazados (aunque conserven el nombre).
-
-Variables de entorno opcionales:
-  ARCHIVO_ESTADO   Ruta del JSON de estado (por defecto: estado.json)
-  EXIT_ON_CHANGE   Si vale "1", el script termina con código 1 cuando hay cambios
-                   (útil para que GitHub te envíe un correo por job fallido).
-"""
-
-import difflib
 import hashlib
 import json
 import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
-from urllib.parse import urljoin, urlparse
+from pathlib import Path
+from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 import urllib3
@@ -29,268 +26,174 @@ from bs4 import BeautifulSoup
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ----------------------------------------------------------------------------
-# Configuración
-# ----------------------------------------------------------------------------
-PAGINAS = [
-    {
-        "nombre": "Factura de compra y venta (XML/XSD)",
-        "url": "https://siatanexo.impuestos.gob.bo/index.php/documentos-fiscales-digitales/archivos-xml-xsd-de-facturas-electronicas/factura-de-compra-y-venta",
-    },
-    # Agrega aquí más páginas:
-    # {"nombre": "Otra página", "url": "https://siatanexo.impuestos.gob.bo/..."},
-]
+ROOT = Path(__file__).parent
+CONFIG = ROOT / "urls.json"
+STATE = ROOT / "state.json"
 
-ARCHIVO_ESTADO = os.getenv("ARCHIVO_ESTADO", "estado.json")
-EXIT_ON_CHANGE = os.getenv("EXIT_ON_CHANGE", "0") == "1"
-
-EXTENSIONES = (".xsd", ".xml", ".zip", ".pdf", ".xlsx", ".xls", ".doc", ".docx")
-MAX_BYTES_ARCHIVO = 20 * 1024 * 1024  # 20 MB
-MAX_FALLOS_CONSECUTIVOS = 3  # recién entonces el job falla por errores de red
-REINTENTOS = 3
-TIMEOUT = 30
-
-# Líneas de texto que cambian solas (contadores, fechas dinámicas) y generarían
-# falsos positivos. Ajusta según lo que veas en los diffs.
-IGNORAR_LINEAS = [
-    re.compile(r"^(visitas|hits|accesos)\b", re.I),
-    re.compile(r"^\d+\s+(visitas|hits)\b", re.I),
-]
-
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; monitor-sin/1.0)"}
+UA = "Mozilla/5.0 (compatible; MonitorDocsSIN/1.0; uso personal, 1 consulta diaria)"
+FILE_EXT = (".xsd", ".xml", ".pdf", ".zip", ".rar", ".xlsx", ".xls",
+            ".doc", ".docx", ".txt", ".json", ".wsdl")
+MAX_BYTES = 50 * 1024 * 1024
+DELAY = 2  # segundos entre peticiones
+VERIFY = os.getenv("VERIFY_SSL", "1") != "0"
+RETRIES = 3
+MAX_FALLOS = 3  # fallos seguidos antes de marcar el job como fallido
 
 
-# ----------------------------------------------------------------------------
-# Red
-# ----------------------------------------------------------------------------
-def obtener(url, **kwargs):
-    """GET con reintentos. Si el certificado SSL no se puede verificar (el
-    servidor no envía el certificado intermedio), reintenta sin verificación."""
-    ultimo_error = None
-    for intento in range(1, REINTENTOS + 1):
+def sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def get(session, url, **kw):
+    """GET con reintentos y fallback si el certificado no se puede verificar."""
+    last = None
+    for attempt in range(1, RETRIES + 1):
         try:
             try:
-                r = requests.get(url, headers=HEADERS, timeout=TIMEOUT, **kwargs)
+                r = session.get(url, timeout=60, verify=VERIFY, **kw)
             except requests.exceptions.SSLError:
+                if not VERIFY:
+                    raise
                 print(f"  ⚠ SSL no verificable, reintentando sin verificación: {url}")
-                r = requests.get(
-                    url, headers=HEADERS, timeout=TIMEOUT, verify=False, **kwargs
-                )
+                r = session.get(url, timeout=60, verify=False, **kw)
             r.raise_for_status()
             return r
         except requests.exceptions.RequestException as e:
-            ultimo_error = e
-            if intento < REINTENTOS:
-                time.sleep(2 * intento)
-    raise ultimo_error
+            last = e
+            if attempt < RETRIES:
+                time.sleep(attempt * 3)
+    raise last
 
 
-def hash_archivo(url):
-    """SHA-256 del archivo enlazado (descarga en streaming)."""
-    r = obtener(url, stream=True)
-    h = hashlib.sha256()
-    total = 0
-    for chunk in r.iter_content(65536):
-        total += len(chunk)
-        if total > MAX_BYTES_ARCHIVO:
-            return "demasiado-grande"
-        h.update(chunk)
-    return h.hexdigest()
+def is_file_link(href: str) -> bool:
+    path = unquote(urlparse(href).path).lower()
+    return path.endswith(FILE_EXT) or "download" in href.lower()
 
 
-# ----------------------------------------------------------------------------
-# Extracción de contenido
-# ----------------------------------------------------------------------------
-def extraer(html, base_url):
+def parse_page(html: str, base_url: str):
     soup = BeautifulSoup(html, "html.parser")
-    for t in soup(["script", "style", "noscript", "nav", "footer", "header", "form"]):
-        t.decompose()
-
-    contenedor = (
-        soup.select_one("[itemprop=articleBody]")
-        or soup.select_one("#content")
-        or soup.select_one("main")
-        or soup.body
-        or soup
-    )
-
-    lineas = []
-    for crudo in contenedor.get_text("\n").splitlines():
-        linea = re.sub(r"\s+", " ", crudo).strip()
-        if not linea:
-            continue
-        if any(p.search(linea) for p in IGNORAR_LINEAS):
-            continue
-        lineas.append(linea)
-    texto = "\n".join(lineas)
-
-    enlaces = {}
-    for a in contenedor.find_all("a", href=True):
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    main = (soup.select_one("[itemprop=articleBody]")
+            or soup.select_one("#content")
+            or soup.select_one("main")
+            or soup.body)
+    text = re.sub(r"\s+", " ", main.get_text(" ", strip=True))
+    links = {}
+    for a in main.find_all("a", href=True):
         href = urljoin(base_url, a["href"])
-        if urlparse(href).path.lower().endswith(EXTENSIONES):
-            enlaces[href] = a.get_text(" ", strip=True)
-
-    return texto, enlaces
-
-
-def sha(texto):
-    return hashlib.sha256(texto.encode("utf-8")).hexdigest()
+        if is_file_link(href):
+            label = a.get_text(" ", strip=True) or Path(urlparse(href).path).name
+            links[href] = label
+    return text, links
 
 
-# ----------------------------------------------------------------------------
-# Estado
-# ----------------------------------------------------------------------------
-def cargar_estado():
-    if os.path.exists(ARCHIVO_ESTADO):
-        try:
-            with open(ARCHIVO_ESTADO, encoding="utf-8") as f:
-                estado = json.load(f)
-                estado.setdefault("paginas", {})
-                return estado
-        except (json.JSONDecodeError, OSError):
-            print("⚠ No se pudo leer el estado previo; se empieza de cero.")
-    return {"paginas": {}}
+def hash_file(session, url):
+    h = hashlib.sha256()
+    size = 0
+    with get(session, url, stream=True) as r:
+        for chunk in r.iter_content(65536):
+            size += len(chunk)
+            if size > MAX_BYTES:
+                raise RuntimeError(f"Archivo demasiado grande: {url}")
+            h.update(chunk)
+    return h.hexdigest(), size
 
 
-def guardar_estado(estado):
-    with open(ARCHIVO_ESTADO, "w", encoding="utf-8") as f:
-        json.dump(estado, f, ensure_ascii=False, indent=2, sort_keys=True)
+def check_page(session, name, url, old):
+    """Devuelve (nuevo_estado, lista_de_cambios, es_baseline)."""
+    html = get(session, url).text
+    text, links = parse_page(html, url)
+    text_hash = sha256_text(text)
+
+    files = {}
+    for href, label in links.items():
+        time.sleep(DELAY)
+        digest, size = hash_file(session, href)
+        files[href] = {"text": label, "sha256": digest, "size": size}
+
+    new = {"page_text_hash": text_hash, "files": files}
+    if old is None:
+        return new, [], True
+
+    changes = []
+    old_files = old.get("files", {})
+    for href, info in files.items():
+        if href not in old_files:
+            changes.append(f"🆕 Archivo nuevo: {info['text']}\n{href}")
+        elif old_files[href]["sha256"] != info["sha256"]:
+            changes.append(
+                f"✏️ Archivo modificado: {info['text']}\n{href}\n"
+                f"({old_files[href]['size']} → {info['size']} bytes)")
+    for href, info in old_files.items():
+        if href not in files:
+            changes.append(f"🗑️ Archivo eliminado: {info['text']}\n{href}")
+    if old.get("page_text_hash") != text_hash:
+        changes.append("📝 El texto de la página cambió (revisar lineamientos)")
+    return new, changes, False
 
 
-# ----------------------------------------------------------------------------
-# Comparación
-# ----------------------------------------------------------------------------
-def comparar(prev, texto, enlaces_nuevos):
-    """Devuelve una lista de descripciones de cambios (vacía si no hubo)."""
-    cambios = []
-
-    if prev.get("hash") != sha(texto):
-        diff = list(
-            difflib.unified_diff(
-                prev.get("texto", "").splitlines(),
-                texto.splitlines(),
-                fromfile="antes",
-                tofile="ahora",
-                lineterm="",
-                n=1,
-            )
-        )
-        recorte = "\n".join(diff[:40])
-        if len(diff) > 40:
-            recorte += f"\n... ({len(diff) - 40} líneas más)"
-        cambios.append("Cambió el texto de la página:\n" + recorte)
-
-    previos = prev.get("enlaces", {})
-    for url in sorted(set(enlaces_nuevos) - set(previos)):
-        cambios.append(f"Archivo NUEVO: {enlaces_nuevos[url]['texto']} → {url}")
-    for url in sorted(set(previos) - set(enlaces_nuevos)):
-        cambios.append(f"Archivo ELIMINADO: {previos[url].get('texto', '')} → {url}")
-    for url in sorted(set(previos) & set(enlaces_nuevos)):
-        a = previos[url].get("sha256")
-        b = enlaces_nuevos[url]["sha256"]
-        if a and b and "error" not in (a, b) and a != b:
-            cambios.append(
-                f"Archivo MODIFICADO: {enlaces_nuevos[url]['texto'] or url} → {url}"
-            )
-
-    return cambios
+def notify(message: str):
+    print(message)
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("(Telegram no configurado; solo log)")
+        return
+    for i in range(0, len(message), 4000):
+        r = requests.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data={"chat_id": chat_id, "text": message[i:i + 4000],
+                  "disable_web_page_preview": "true"},
+            timeout=30)
+        if not r.ok:
+            print(f"Error Telegram: {r.status_code} {r.text}", file=sys.stderr)
 
 
-# ----------------------------------------------------------------------------
-# Principal
-# ----------------------------------------------------------------------------
 def main():
-    estado = cargar_estado()
-    ahora = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    pages = json.loads(CONFIG.read_text(encoding="utf-8"))
+    state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
+    fallos = state.setdefault("_fallos", {})
 
-    todos_cambios = []  # (nombre, url, [descripciones])
-    errores = []  # (nombre, url, error, fallos_consecutivos)
+    session = requests.Session()
+    session.headers["User-Agent"] = UA
 
-    for pagina in PAGINAS:
-        nombre, url = pagina["nombre"], pagina["url"]
-        print(f"Revisando: {nombre}")
-        prev = estado["paginas"].setdefault(nombre, {})
-
+    reports, errors, hard_fail = [], [], False
+    for page in pages:
+        name, url = page["name"], page["url"]
+        print(f"→ {name}: {url}")
         try:
-            r = obtener(url)
-            texto, enlaces = extraer(r.text, url)
+            new, changes, baseline = check_page(session, name, url, state.get(url))
+        except Exception as e:  # noqa: BLE001
+            fallos[url] = fallos.get(url, 0) + 1
+            errors.append(f"{name}: {e}\n→ {url} (fallos seguidos: {fallos[url]})")
+            if fallos[url] >= MAX_FALLOS:
+                hard_fail = True
+                reports.append(
+                    f"⚠️ No se pudo consultar «{name}» {fallos[url]} veces seguidas.\n{url}\n{e}")
+            continue
+        fallos.pop(url, None)
+        state[url] = new
+        if baseline:
+            n = len(new["files"])
+            print(f"  Línea base creada con {n} archivos:")
+            for href, info in new["files"].items():
+                print(f"   - {info['text']} ({info['size']} bytes) {href}")
+            reports.append(f"✅ Línea base creada para «{name}» ({n} archivos).")
+        elif changes:
+            reports.append(f"🔔 Cambios en «{name}»\n{url}\n\n" + "\n\n".join(changes))
+        else:
+            print("  Sin cambios.")
+        time.sleep(DELAY)
 
-            enlaces_nuevos = {}
-            previos = prev.get("enlaces", {})
-            for u, t in enlaces.items():
-                try:
-                    digest = hash_archivo(u)
-                except Exception as e:
-                    print(f"  ⚠ No se pudo descargar {u}: {e}")
-                    digest = previos.get(u, {}).get("sha256", "error")
-                enlaces_nuevos[u] = {"texto": t, "sha256": digest}
+    STATE.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
 
-            if "hash" not in prev:
-                print(
-                    f"  Primera ejecución: línea base guardada "
-                    f"({len(enlaces_nuevos)} archivos enlazados)."
-                )
-            else:
-                cambios = comparar(prev, texto, enlaces_nuevos)
-                if cambios:
-                    todos_cambios.append((nombre, url, cambios))
-                    print(f"  ✔ {len(cambios)} cambio(s) detectado(s)")
-                else:
-                    print("  Sin cambios.")
-
-            prev.update(
-                {
-                    "url": url,
-                    "hash": sha(texto),
-                    "texto": texto,
-                    "enlaces": enlaces_nuevos,
-                    "revisado": ahora,
-                    "fallos": 0,
-                }
-            )
-
-        except Exception as e:
-            prev["fallos"] = prev.get("fallos", 0) + 1
-            errores.append((nombre, url, e, prev["fallos"]))
-            print(f"  ✖ Error ({prev['fallos']} seguido(s)): {e}")
-
-    guardar_estado(estado)
-
-    # --- Reporte -------------------------------------------------------------
-    if todos_cambios:
-        print("\nCAMBIOS DETECTADOS:")
-        lineas_md = [f"# Cambios detectados ({ahora})", ""]
-        for nombre, url, cambios in todos_cambios:
-            print(f"\n■ {nombre}\n  {url}")
-            lineas_md += [f"## {nombre}", url, ""]
-            for c in cambios:
-                print("  - " + c.replace("\n", "\n    "))
-                lineas_md += ["```", c, "```", ""]
-        with open("cambios.md", "w", encoding="utf-8") as f:
-            f.write("\n".join(lineas_md))
-
-        resumen = os.getenv("GITHUB_STEP_SUMMARY")
-        if resumen:
-            with open(resumen, "a", encoding="utf-8") as f:
-                f.write("\n".join(lineas_md) + "\n")
-
-    salida = os.getenv("GITHUB_OUTPUT")
-    if salida:
-        with open(salida, "a", encoding="utf-8") as f:
-            f.write(f"changed={'true' if todos_cambios else 'false'}\n")
-
-    if errores:
-        print("\nERRORES:")
-        for nombre, url, e, fallos in errores:
-            print(f"{nombre}: {e}\n→ {url} (fallos seguidos: {fallos})")
-
-    # --- Código de salida ------------------------------------------------------
-    if any(fallos >= MAX_FALLOS_CONSECUTIVOS for *_, fallos in errores):
-        print(f"\nFalló {MAX_FALLOS_CONSECUTIVOS} veces seguidas: se marca el job como fallido.")
+    if reports:
+        notify("\n\n———\n\n".join(reports))
+    if errors:
+        print("ERRORES:\n" + "\n".join(errors), file=sys.stderr)
+    if hard_fail:
         sys.exit(1)
-    if EXIT_ON_CHANGE and todos_cambios:
-        sys.exit(1)
-    sys.exit(0)
 
 
 if __name__ == "__main__":
