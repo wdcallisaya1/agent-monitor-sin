@@ -10,10 +10,12 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlparse
 
+import certifi
 import requests
 from bs4 import BeautifulSoup
 
@@ -26,7 +28,30 @@ FILE_EXT = (".xsd", ".xml", ".pdf", ".zip", ".rar", ".xlsx", ".xls",
             ".doc", ".docx", ".txt", ".json", ".wsdl")
 MAX_BYTES = 50 * 1024 * 1024
 DELAY = 2  # segundos entre peticiones
-VERIFY = os.getenv("VERIFY_SSL", "1") != "0"
+
+
+def build_verify():
+    """Decide cómo verificar SSL.
+
+    - VERIFY_SSL=0 -> sin verificar (solución rápida).
+    - Si existe certs/extra-ca.pem -> se agrega a los certificados de confianza
+      (solución correcta cuando el servidor no envía el certificado intermedio).
+    - Si no -> verificación normal.
+    """
+    if os.getenv("VERIFY_SSL", "1") == "0":
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        return False
+    extra = ROOT / "certs" / "extra-ca.pem"
+    if extra.exists():
+        bundle = Path(tempfile.gettempdir()) / "ca-bundle.pem"
+        bundle.write_bytes(
+            Path(certifi.where()).read_bytes() + b"\n" + extra.read_bytes())
+        return str(bundle)
+    return True
+
+
+VERIFY = build_verify()
 # Por defecto la primera corrida de una URL (línea base) no manda mensaje.
 NOTIFY_BASELINE = os.getenv("NOTIFY_BASELINE", "0") == "1"
 
