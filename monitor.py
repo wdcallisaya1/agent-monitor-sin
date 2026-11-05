@@ -4,12 +4,6 @@
 Descarga cada página de urls.json, detecta los archivos enlazados
 (XSD, XML, PDF, ZIP...), calcula su SHA-256 y compara con state.json.
 Si algo cambia, avisa por Telegram (si hay credenciales) y lo imprime en el log.
-
-Manejo de red:
-- Reintentos ante errores temporales.
-- Si el certificado SSL no se puede verificar (el servidor del SIN no envía el
-  certificado intermedio), reintenta sin verificación y lo avisa en el log.
-- El job solo falla si una página falla MAX_FALLOS veces seguidas.
 """
 import hashlib
 import json
@@ -21,10 +15,7 @@ from pathlib import Path
 from urllib.parse import unquote, urljoin, urlparse
 
 import requests
-import urllib3
 from bs4 import BeautifulSoup
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 ROOT = Path(__file__).parent
 CONFIG = ROOT / "urls.json"
@@ -36,8 +27,8 @@ FILE_EXT = (".xsd", ".xml", ".pdf", ".zip", ".rar", ".xlsx", ".xls",
 MAX_BYTES = 50 * 1024 * 1024
 DELAY = 2  # segundos entre peticiones
 VERIFY = os.getenv("VERIFY_SSL", "1") != "0"
-RETRIES = 3
-MAX_FALLOS = 3  # fallos seguidos antes de marcar el job como fallido
+# Por defecto la primera corrida de una URL (línea base) no manda mensaje.
+NOTIFY_BASELINE = os.getenv("NOTIFY_BASELINE", "0") == "1"
 
 
 def sha256_text(text: str) -> str:
@@ -45,24 +36,9 @@ def sha256_text(text: str) -> str:
 
 
 def get(session, url, **kw):
-    """GET con reintentos y fallback si el certificado no se puede verificar."""
-    last = None
-    for attempt in range(1, RETRIES + 1):
-        try:
-            try:
-                r = session.get(url, timeout=60, verify=VERIFY, **kw)
-            except requests.exceptions.SSLError:
-                if not VERIFY:
-                    raise
-                print(f"  ⚠ SSL no verificable, reintentando sin verificación: {url}")
-                r = session.get(url, timeout=60, verify=False, **kw)
-            r.raise_for_status()
-            return r
-        except requests.exceptions.RequestException as e:
-            last = e
-            if attempt < RETRIES:
-                time.sleep(attempt * 3)
-    raise last
+    r = session.get(url, timeout=60, verify=VERIFY, **kw)
+    r.raise_for_status()
+    return r
 
 
 def is_file_link(href: str) -> bool:
@@ -153,33 +129,27 @@ def notify(message: str):
 def main():
     pages = json.loads(CONFIG.read_text(encoding="utf-8"))
     state = json.loads(STATE.read_text(encoding="utf-8")) if STATE.exists() else {}
-    fallos = state.setdefault("_fallos", {})
 
     session = requests.Session()
     session.headers["User-Agent"] = UA
 
-    reports, errors, hard_fail = [], [], False
+    reports, errors = [], []
     for page in pages:
         name, url = page["name"], page["url"]
         print(f"→ {name}: {url}")
         try:
             new, changes, baseline = check_page(session, name, url, state.get(url))
         except Exception as e:  # noqa: BLE001
-            fallos[url] = fallos.get(url, 0) + 1
-            errors.append(f"{name}: {e}\n→ {url} (fallos seguidos: {fallos[url]})")
-            if fallos[url] >= MAX_FALLOS:
-                hard_fail = True
-                reports.append(
-                    f"⚠️ No se pudo consultar «{name}» {fallos[url]} veces seguidas.\n{url}\n{e}")
+            errors.append(f"{name}: {e}")
             continue
-        fallos.pop(url, None)
         state[url] = new
         if baseline:
             n = len(new["files"])
             print(f"  Línea base creada con {n} archivos:")
             for href, info in new["files"].items():
                 print(f"   - {info['text']} ({info['size']} bytes) {href}")
-            reports.append(f"✅ Línea base creada para «{name}» ({n} archivos).")
+            if NOTIFY_BASELINE:
+                reports.append(f"✅ Línea base creada para «{name}» ({n} archivos).")
         elif changes:
             reports.append(f"🔔 Cambios en «{name}»\n{url}\n\n" + "\n\n".join(changes))
         else:
@@ -192,7 +162,6 @@ def main():
         notify("\n\n———\n\n".join(reports))
     if errors:
         print("ERRORES:\n" + "\n".join(errors), file=sys.stderr)
-    if hard_fail:
         sys.exit(1)
 
 
