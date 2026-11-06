@@ -4,7 +4,7 @@ Siat
 Buscar...
 Regresar
 Detalles
-Visto: 2309
+Visto: 2582
 XML y XSD - Factura de Compra y Venta
 Habilitada para transacciones por bienes o servicios en general, incluyen línea blanca, negra y cualquier actividad que involucre un intercambio de estos.
 Descarga XML/XSD
